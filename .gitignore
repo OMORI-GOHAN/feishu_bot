@@ -7,3 +7,6 @@
 *.db-shm
 *.db-wal
 *.db-journal
+
+# Local architecture and learning notes
+/DESIGN.local.md

@@ -1,0 +1,11 @@
+[feishu]
+app_id = "cli_example"
+app_secret = "replace-me"
+
+[rabbitmq]
+url = "amqp://guest:guest@localhost:5672/%2f"
+queue = "message.feishubot"
+
+[bot]
+target_chat_id = "oc_example"
+admin_open_ids = []
