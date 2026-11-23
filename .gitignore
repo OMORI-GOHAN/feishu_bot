@@ -1,0 +1,9 @@
+/target/
+/config.toml
+.env
+.env.*
+!.env.example
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
