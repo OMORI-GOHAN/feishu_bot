@@ -96,6 +96,27 @@ impl FeishuClient {
             text
         ).await?)
     }
+}
 
+#[cfg(test)]
+mod tests {
+    use crate::config::FeishuConfig;
+    use super::*;
 
+    #[test]
+    fn expire_token_is_not_reused() {
+        // 创建测试客户端
+        let feishu_config_test = FeishuConfig{
+            app_id: "test-app".to_string(), 
+            app_secret: "test-secret".to_string()
+        };
+        let mut client_test = FeishuClient::new(feishu_config_test).expect("创建测试客户端失败");
+        client_test.cached_token = Some(CachedToken { 
+            value: "test".to_string(), 
+            refresh_at: std::time::Instant::now() 
+        });
+
+        let result = client_test.cached_access_token();
+        assert!(result.is_none());
+    }
 }
