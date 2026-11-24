@@ -5,7 +5,7 @@ use std::path::Path;
 pub struct Config {
     pub feishu: FeishuConfig,
     pub rabbitmq: RabbitMqConfig,
-    pub bot: BotConfig,    
+    pub bot: BotConfig,
 }
 
 #[derive(Deserialize)]
@@ -27,14 +27,16 @@ pub struct BotConfig {
 }
 
 impl Config {
-    pub fn load(path: &Path) -> anyhow::Result<Self> { // 加载配置
+    pub fn load(path: &Path) -> anyhow::Result<Self> {
+        // 加载配置
         let content = std::fs::read_to_string(path)?;
         let config: Self = toml::from_str(&content)?;
         config.validate()?;
         Ok(config)
     }
 
-    pub fn validate(&self) -> anyhow::Result<()> { // 检查字段空值
+    pub fn validate(&self) -> anyhow::Result<()> {
+        // 检查字段空值
         if self.feishu.app_id.trim().is_empty() {
             anyhow::bail!("feishu.app_id 不能为空");
         }

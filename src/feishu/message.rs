@@ -25,14 +25,11 @@ pub struct SentMessage {
 }
 
 // 构造请求
-pub fn build_text_request(
-    chat_id: &str,
-    text: &str,
-) -> anyhow::Result<SendMessageRequest> {
+pub fn build_text_request(chat_id: &str, text: &str) -> anyhow::Result<SendMessageRequest> {
     if chat_id.trim().is_empty() {
         anyhow::bail!("群id为空!");
     }
- 
+
     let send_str = if text.trim().is_empty() {
         "[反馈正文为空]"
     } else {
@@ -60,10 +57,12 @@ pub async fn send_text(
     let text_request = build_text_request(chat_id, text)?;
 
     // 发送
-    let post_response = client.post("https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=chat_id")
+    let post_response = client
+        .post("https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=chat_id")
         .bearer_auth(access_token)
         .json(&text_request)
-        .send().await?
+        .send()
+        .await?
         .error_for_status()?;
 
     // 解析响应
@@ -76,7 +75,7 @@ pub async fn send_text(
             send_message_response.msg
         );
     }
-    
+
     // 取出结构体SentMessageResponse中的SentMessage
     let sent_message = match send_message_response.data {
         Some(sent_message) => {
@@ -84,7 +83,7 @@ pub async fn send_text(
                 anyhow::bail!("响应id为空");
             }
             sent_message
-        },
+        }
         None => {
             anyhow::bail!("响应缺少data");
         }

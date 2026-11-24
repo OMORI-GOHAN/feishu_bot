@@ -14,7 +14,8 @@ pub struct TokenResponse {
     pub expire: Option<u64>,
 }
 
-pub async fn fetch_access_token( // 获取飞书凭证
+pub async fn fetch_access_token(
+    // 获取飞书凭证
     client: &reqwest::Client,
     feishu_config: &crate::config::FeishuConfig,
 ) -> anyhow::Result<TokenResponse> {
@@ -22,10 +23,12 @@ pub async fn fetch_access_token( // 获取飞书凭证
         app_id: feishu_config.app_id.clone(),
         app_secret: feishu_config.app_secret.clone(),
     };
-    
-    let post_response = client.post("https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal")
+
+    let post_response = client
+        .post("https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal")
         .json(&token_request)
-        .send().await?
+        .send()
+        .await?
         .error_for_status()?;
 
     let token_response = post_response.json::<TokenResponse>().await?;
