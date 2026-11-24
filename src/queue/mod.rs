@@ -45,15 +45,36 @@ pub async fn consume(
     feishu_client: &mut crate::feishu::client::FeishuClient,
     chat_id: &str,
 ) -> anyhow::Result<()> {
-    while let Some(result) = consumer.next().await {
-        // 提取消息deliver，在此我们需要其中的 data正文，并使用ack()确认投递完成
-        let delivery = result?;
-        let text = std::str::from_utf8(&delivery.data)?; // 提取正文
-        feishu_client.send_text(chat_id, text).await?;
-        delivery
-            .ack(lapin::options::BasicAckOptions::default())
-            .await?; // 确认消息
-    }
+    // 设置退出事件监听
+    let shutdown = tokio::signal::ctrl_c();
+    tokio::pin!(shutdown);
 
-    anyhow::bail!("RabbitMQ消费流意外退出!")
+    loop {
+        tokio::select! {
+            biased;
+
+            result = &mut shutdown => {
+                result?; // 解析监听信号是否正常
+                println!("收到停止信号");
+                return Ok(());
+            }
+
+            item = consumer.next() => {
+                match item {
+                    Some(result) => {
+                        // 提取消息deliver，在此我们需要其中的 data正文，并使用ack()确认投递完成
+                        let delivery = result?;
+                        let text = std::str::from_utf8(&delivery.data)?;
+                        feishu_client.send_text(chat_id, text).await?;
+                        delivery
+                            .ack(lapin::options::BasicAckOptions::default())
+                            .await?;
+                    },
+                    None => {
+                        anyhow::bail!("RabbitMQ消费流意外退出!")
+                    }
+                }
+            }
+        }
+    }
 }
