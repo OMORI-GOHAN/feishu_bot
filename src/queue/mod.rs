@@ -19,7 +19,7 @@ pub async fn connect(
 pub async fn create_consumer(
     channel: &lapin::Channel,
     queue_name: &str,
-) -> anyhow::Result<lapin::Consumer> {
+) -> lapin::Result<lapin::Consumer> {
     // 限制未确认消息数量
     channel
         .basic_qos(
@@ -46,7 +46,7 @@ pub async fn consume(
     feishu_client: &mut crate::feishu::client::FeishuClient,
     chat_id: &str,
     shutdown: &CancellationToken,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<ConsumeExit> {
     // 设置退出事件监听
 
     loop {
@@ -55,22 +55,47 @@ pub async fn consume(
 
             _ = shutdown.cancelled() => {
                 println!("收到停止信号");
-                return Ok(());
+                return Ok(ConsumeExit::Stopped);
             }
 
             item = consumer.next() => {
                 match item {
                     Some(result) => {
                         // 提取消息deliver，在此我们需要其中的 data正文，并使用ack()确认投递完成
-                        let delivery = result?;
+                        let delivery = match result {
+                            Ok(delivery) => {
+                                delivery
+                            }
+                            Err(error) => {
+                                if is_reconnectable_consumer_error(&error) {
+                                    println!("消费流错误");
+                                    return Ok(ConsumeExit::Reconnect);
+                                }
+                                else {
+                                    return Err(error.into());
+                                }
+                            },
+                        };
+                        // 发送正文
                         let text = std::str::from_utf8(&delivery.data)?;
                         feishu_client.send_text(chat_id, text).await?;
-                        delivery
+                        if let Err(error) = delivery
                             .ack(lapin::options::BasicAckOptions::default())
-                            .await?;
+                            .await {
+                                // 若ack错误检查是否为值得重试的错误
+                                if is_reconnectable_consumer_error(&error) {
+                                    println!("确认消息时，发生连接错误");
+                                    return Ok(ConsumeExit::Reconnect);
+                                }
+                                else {
+                                    return Err(error.into());
+                                }
+                            };
+
                     },
                     None => {
-                        anyhow::bail!("RabbitMQ消费流意外退出!")
+                        println!("消费流意外退出");
+                        return Ok(ConsumeExit::Reconnect);
                     }
                 }
             }
@@ -143,4 +168,22 @@ fn is_retryable_connection_error(error: &lapin::Error) -> bool {
         },
         _ => false,
     }
+}
+
+// 检查是否为值得重连的所有消费流错误
+pub(crate) fn is_reconnectable_consumer_error(error: &lapin::Error) -> bool {
+    if is_retryable_connection_error(error) {
+        return true;
+    }
+    match error.kind() {
+        lapin::ErrorKind::MissingHeartbeatError
+        | lapin::ErrorKind::InvalidConnectionState(_)
+        | lapin::ErrorKind::InvalidChannelState(..) => true,
+        _ => false,
+    }
+}
+
+pub enum ConsumeExit {
+    Stopped,
+    Reconnect,
 }
