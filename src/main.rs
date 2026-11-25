@@ -1,7 +1,8 @@
+mod app;
+mod command;
 mod config;
 mod feishu;
 mod queue;
-mod app;
 
 use config::Config;
 use std::path::Path;
@@ -17,7 +18,8 @@ async fn main() -> anyhow::Result<()> {
     let shutdown = CancellationToken::new();
 
     // 运行业务函数
-    let running = app::run(config, &shutdown);
+    // let running = app::run(config, &shutdown);
+    let running = feishu::event::listen(&config.feishu, &shutdown, &config.bot);
     tokio::pin!(running);
 
     let result = tokio::select! {

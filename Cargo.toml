@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1.0.104"
+feishu-ws = "0.1.0"
 futures-util = "0.3.34"
 lapin = { version = "4", features = ["tokio"] }
 reqwest = { version = "0.13.5", features = ["json"] }

@@ -5,7 +5,7 @@ use crate::queue::is_reconnectable_consumer_error;
 use tokio_util::sync::CancellationToken;
 
 // 业务运行函数
-pub async fn run(config: Config, shutdown: &CancellationToken) -> anyhow::Result<()> {
+pub(crate) async fn run(config: Config, shutdown: &CancellationToken) -> anyhow::Result<()> {
     // 创建客户端
     let mut feishu_client = FeishuClient::new(config.feishu)?;
 
