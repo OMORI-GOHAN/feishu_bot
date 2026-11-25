@@ -1,9 +1,10 @@
 use futures_util::StreamExt;
+use tokio_util::sync::CancellationToken;
 
 // 建立与RabbitMQ的连接
 pub async fn connect(
     config: &crate::config::RabbitMqConfig,
-) -> anyhow::Result<(lapin::Connection, lapin::Channel)> {
+) -> lapin::Result<(lapin::Connection, lapin::Channel)> {
     // 连接RabbitMQ
     let connection =
         lapin::Connection::connect(&config.url, lapin::ConnectionProperties::default()).await?;
@@ -44,17 +45,15 @@ pub async fn consume(
     mut consumer: lapin::Consumer,
     feishu_client: &mut crate::feishu::client::FeishuClient,
     chat_id: &str,
+    shutdown: &CancellationToken,
 ) -> anyhow::Result<()> {
     // 设置退出事件监听
-    let shutdown = tokio::signal::ctrl_c();
-    tokio::pin!(shutdown);
 
     loop {
         tokio::select! {
             biased;
 
-            result = &mut shutdown => {
-                result?; // 解析监听信号是否正常
+            _ = shutdown.cancelled() => {
                 println!("收到停止信号");
                 return Ok(());
             }
@@ -76,5 +75,72 @@ pub async fn consume(
                 }
             }
         }
+    }
+}
+
+// 允许重连的连接尝试
+pub async fn connect_with_retry(
+    config: &crate::config::RabbitMqConfig,
+    shutdown: &CancellationToken,
+) -> anyhow::Result<Option<(lapin::Connection, lapin::Channel)>> {
+    loop {
+        let connect_result = tokio::select! {
+            biased;
+            _ = shutdown.cancelled() => {
+                println!("收到停止信号");
+                return Ok(None);
+            }
+
+            result = connect(config) => { // 连接并保存当前连接尝试的结果
+                result
+            }
+        };
+
+        // 检查连接情况
+        match connect_result {
+            Ok(pair) => {
+                println!("连接成功");
+                return Ok(Some(pair));
+            }
+            Err(error) => {
+                if is_retryable_connection_error(&error) {
+                    println!("连接错误，三秒后尝试重连"); // 这里有点难懂，是判断可以继续连接后，继续往下走↓
+                } else {
+                    println!("致命错误，无法重连");
+                    return Err(error.into()); // 得到无法重连的错误后直接返回，不继续执行下方的内容
+                }
+            }
+        }
+
+        // 等待三秒的同时继续监听关闭信号
+        tokio::select! {
+            biased;
+
+            _ = shutdown.cancelled() => {
+                return Ok(None);
+            }
+
+            _ = tokio::time::sleep(
+                std::time::Duration::from_secs(3)
+            ) => {
+                println!("三秒等待结束");
+            }
+        }
+    }
+}
+
+// 判断是否为值得重试的连接错误
+fn is_retryable_connection_error(error: &lapin::Error) -> bool {
+    match error.kind() {
+        lapin::ErrorKind::IOError(io_error) => match io_error.kind() {
+            std::io::ErrorKind::ConnectionRefused
+            | std::io::ErrorKind::ConnectionReset
+            | std::io::ErrorKind::ConnectionAborted
+            | std::io::ErrorKind::TimedOut
+            | std::io::ErrorKind::BrokenPipe
+            | std::io::ErrorKind::Interrupted => true,
+            _ => false,
+        },
+        _ => false,
     }
 }
