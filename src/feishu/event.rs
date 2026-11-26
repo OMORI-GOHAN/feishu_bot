@@ -7,19 +7,7 @@ struct EventPrinter {
     // 目标群id
     target_chat_id: String,
     // 指令消息发送端
-    message_tx: tokio::sync::mpsc::Sender<IncomingMessage>,
-}
-
-// 收到的文字消息
-pub struct IncomingMessage {
-    // 原消息id
-    pub message_id: String,
-    // 所在群id
-    pub chat_id: String,
-    // 发送者id
-    pub sender_open_id: String,
-    // 正文
-    pub text: String,
+    message_tx: tokio::sync::mpsc::Sender<super::message::IncomingMessage>,
 }
 
 // 处理事件与连接状态
@@ -32,11 +20,12 @@ impl Handler for EventPrinter {
                     return;
                 }
                 println!(
-                    "message_id: {0}, chat_id: {1}, sender_open_id: {2}, text: {3}",
+                    "message_id: {0}, chat_id: {1}, sender_open_id: {2}, text: {3}, parent_message_id: {4:?}",
                     incoming_message.message_id,
                     incoming_message.chat_id,
                     incoming_message.sender_open_id,
-                    incoming_message.text
+                    incoming_message.text,
+                    incoming_message.parent_message_id,
                 );
                 // 转交消息，通道满或关闭时丢弃并记录错误
                 if let Err(error) = self.message_tx.try_send(incoming_message) {
@@ -55,38 +44,6 @@ impl Handler for EventPrinter {
     }
 }
 
-// 依次接收消息并执行指令
-async fn process_commands(
-    mut message_rx: tokio::sync::mpsc::Receiver<IncomingMessage>,
-    feishu_client: &mut crate::feishu::client::FeishuClient,
-    shutdown: &tokio_util::sync::CancellationToken,
-) -> anyhow::Result<()> {
-    loop {
-        tokio::select! {
-            // 同时就绪时优先停止
-            biased;
-
-            _ = shutdown.cancelled() => {
-                return Ok(());
-            }
-            item = message_rx.recv() => {
-                match item {
-                    Some(incoming_message) => {
-                        if let Some(command) = crate::command::parse_command(&incoming_message.text) {
-                            if let Err(error) = crate::command::execute_command(feishu_client, &incoming_message.message_id, &command).await {
-                                eprintln!("错误: {error}");
-                            }
-                        }
-                    },
-                    None => {
-                        anyhow::bail!("内部消息通道已关闭");
-                    }
-                }
-            }
-        }
-    }
-}
-
 // 同时运行长连接与指令处理
 pub async fn listen(
     feishu_config: &crate::config::FeishuConfig,
@@ -101,7 +58,8 @@ pub async fn listen(
     let ws_client = feishu_ws::Client::new(ws_config)?;
 
     // 用内部通道转交消息，最多暂存32条
-    let (message_tx, message_rx) = tokio::sync::mpsc::channel::<IncomingMessage>(32);
+    let (message_tx, message_rx) =
+        tokio::sync::mpsc::channel::<super::message::IncomingMessage>(32);
 
     // 创建处理器
     let handler = EventPrinter {
@@ -116,12 +74,12 @@ pub async fn listen(
             app_secret: feishu_config.app_secret.clone(),
         })?;
 
-    // 跟随主程序停止，也可单独通知两项工作收尾
     let listener_shutdown = shutdown.child_token();
 
     // 创建两个Future，由下方select同时推动执行
     let running = ws_client.run(&handler, listener_shutdown.cancelled());
-    let commands = process_commands(message_rx, &mut feishu_client, &listener_shutdown);
+    let commands =
+        crate::command::process_commands(message_rx, &mut feishu_client, &listener_shutdown);
 
     tokio::pin!(running);
     tokio::pin!(commands);
@@ -152,8 +110,8 @@ pub async fn listen(
     }
 }
 
-// 提取文字消息，忽略其他事件与消息类型
-fn parse_message(event: &Event) -> anyhow::Result<Option<IncomingMessage>> {
+// 提取收到的文字消息
+fn parse_message(event: &Event) -> anyhow::Result<Option<super::message::IncomingMessage>> {
     match event.event_type() {
         Some("im.message.receive_v1") => {
             match event
@@ -187,6 +145,12 @@ fn parse_message(event: &Event) -> anyhow::Result<Option<IncomingMessage>> {
                         .and_then(|value| value.as_str())
                         .ok_or_else(|| anyhow::anyhow!("消息事件缺少字段 content"))?;
 
+                    let parent_message_id = event
+                        .payload
+                        .pointer("/event/message/parent_id")
+                        .and_then(|value| value.as_str())
+                        .map(str::to_owned);
+
                     // 将正文JSON解析为文字内容
                     let message_content: crate::feishu::message::MessageContent =
                         serde_json::from_str(content)?;
@@ -196,11 +160,12 @@ fn parse_message(event: &Event) -> anyhow::Result<Option<IncomingMessage>> {
                             anyhow::bail!("消息正文识别为文字，却试图输出图片");
                         }
                     };
-                    let incoming_message = IncomingMessage {
+                    let incoming_message = super::message::IncomingMessage {
                         message_id: message_id.to_owned(),
                         chat_id: chat_id.to_owned(),
                         sender_open_id: sender_open_id.to_owned(),
                         text: text,
+                        parent_message_id,
                     };
                     Ok(Some(incoming_message))
                 }

@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1.0.104"
+async-trait = "0.1.92"
 feishu-ws = "0.1.0"
 futures-util = "0.3.34"
 lapin = { version = "4", features = ["tokio"] }

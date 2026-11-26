@@ -26,6 +26,15 @@ pub enum MessageContent {
     Image { image_key: String },
 }
 
+// 收到的文字消息
+pub struct IncomingMessage {
+    pub message_id: String,                // 原消息id
+    pub chat_id: String,                   // 所在群id
+    pub sender_open_id: String,            // 发送者id
+    pub text: String,                      // 正文
+    pub parent_message_id: Option<String>, // 被回复时引用的消息的id
+}
+
 // 构造请求
 pub fn build_text_request(chat_id: &str, text: &str) -> anyhow::Result<SendMessageRequest> {
     if chat_id.trim().is_empty() {

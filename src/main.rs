@@ -32,7 +32,7 @@ async fn main() -> anyhow::Result<()> {
                     std::time::Duration::from_secs(5),
                     notify_failure(&config, "RabbitMQ转发"),
                 ).await;
-                
+
                 match notice_result {
                     Ok(Err(error)) => {
                         eprintln!("故障通知发送失败: {error}");
@@ -46,7 +46,7 @@ async fn main() -> anyhow::Result<()> {
 
             shutdown.cancel();
             let events_result = events.await;
-            
+
             relay_result?;
             events_result?;
             Ok(())
@@ -58,7 +58,7 @@ async fn main() -> anyhow::Result<()> {
                     std::time::Duration::from_secs(5),
                     notify_failure(&config, "飞书指令监听"),
                 ).await;
-                
+
                 match notice_result {
                     Ok(Err(error)) => {
                         eprintln!("故障通知发送失败: {error}");
@@ -72,7 +72,7 @@ async fn main() -> anyhow::Result<()> {
 
             shutdown.cancel();
             let relay_result = relay.await;
-            
+
             events_result?;
             relay_result?;
             Ok(())

@@ -1,9 +1,21 @@
+mod basic;
+mod framework;
+
 use crate::feishu::message::MessageContent;
+pub(crate) use framework::CommandRegistry;
+use framework::{CommandContext, CommandHandler};
 
 #[derive(Debug)]
 pub struct ParsedCommand {
     pub name: String,
     pub args: String,
+}
+
+// 组装注册表
+pub(crate) fn build_registry() -> anyhow::Result<CommandRegistry> {
+    let mut registry = CommandRegistry::new();
+    basic::register_commands(&mut registry)?;
+    Ok(registry)
 }
 
 // 解析指令参数
@@ -40,34 +52,70 @@ pub fn parse_command(text: &str) -> Option<ParsedCommand> {
     None
 }
 
+// 查询注册表，调用对应的处理器
 pub async fn execute_command(
+    registry: &CommandRegistry,
     client: &mut crate::feishu::client::FeishuClient,
-    message_id: &str,
+    message: &crate::feishu::message::IncomingMessage,
     command: &ParsedCommand,
 ) -> anyhow::Result<()> {
-    match command.name.as_str() {
-        "ping" => {
-            command_ping(client, message_id).await?;
-        }
-        "help" => {}
-        _ => {
+    let mut ctx = CommandContext { message, client };
+
+    let contents = match registry.find(&command.name) {
+        Some(handler) => handler.handle(&mut ctx, command.args.as_str()).await?,
+        None => {
             let message_content = MessageContent::Text {
-                text: "未知指令,请使用help查看现有指令".to_string(),
+                text: "未知指令,请使用 help 查看现有指令".to_string(),
             };
-            client.reply_message(message_id, &message_content).await?;
+            vec![message_content]
         }
+    };
+
+    for content in contents {
+        ctx.client
+            .reply_message(&ctx.message.message_id, &content)
+            .await?;
     }
 
     Ok(())
 }
 
-async fn command_ping(
-    client: &mut crate::feishu::client::FeishuClient,
-    message_id: &str,
+// 依次接收消息并执行指令
+pub(crate) async fn process_commands(
+    mut message_rx: tokio::sync::mpsc::Receiver<crate::feishu::message::IncomingMessage>,
+    feishu_client: &mut crate::feishu::client::FeishuClient,
+    shutdown: &tokio_util::sync::CancellationToken,
 ) -> anyhow::Result<()> {
-    let message_content = MessageContent::Text {
-        text: "pong".to_string(),
-    };
-    client.reply_message(message_id, &message_content).await?;
-    Ok(())
+    // 创建并使用指令注册表
+    let registry = crate::command::build_registry()?;
+
+    loop {
+        tokio::select! {
+            // 同时就绪时优先停止
+            biased;
+
+            _ = shutdown.cancelled() => {
+                return Ok(());
+            }
+            item = message_rx.recv() => {
+                match item {
+                    Some(incoming_message) => {
+                        if let Some(command) = crate::command::parse_command(&incoming_message.text) {
+                            if let Err(error) = crate::command::execute_command(
+                                &registry,
+                                feishu_client,
+                                &incoming_message,
+                                &command)
+                            .await {
+                                eprintln!("错误: {error}");
+                            }
+                        }
+                    },
+                    None => {
+                        anyhow::bail!("内部消息通道已关闭");
+                    }
+                }
+            }
+        }
+    }
 }

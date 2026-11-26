@@ -721,6 +721,7 @@ name = "feishu_bot"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "feishu-ws",
  "futures-util",
  "lapin",
