@@ -85,9 +85,19 @@ impl FeishuClient {
         &mut self,
         chat_id: &str,
         text: &str,
-    ) -> anyhow::Result<crate::feishu::message::SentMessage> {
+    ) -> anyhow::Result<crate::feishu::message::MessageReceipt> {
         let access_token = self.get_access_token().await?;
         crate::feishu::message::send_text(&self.http, &access_token, chat_id, text).await
+    }
+
+    // 调用消息回复
+    pub async fn reply_message(
+        &mut self,
+        message_id: &str,
+        content: &crate::feishu::message::MessageContent,
+    ) -> anyhow::Result<crate::feishu::message::MessageReceipt> {
+        let access_token = self.get_access_token().await?;
+        crate::feishu::message::reply_message(&self.http, &access_token, message_id, content).await
     }
 }
 
