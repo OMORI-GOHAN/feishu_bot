@@ -8,7 +8,7 @@ pub struct Config {
     pub bot: BotConfig,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct FeishuConfig {
     pub app_id: String,
     pub app_secret: String,
