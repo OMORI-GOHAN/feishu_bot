@@ -4,6 +4,7 @@ use async_trait::async_trait;
 pub struct CommandContext<'a> {
     pub message: &'a IncomingMessage,
     pub client: &'a mut FeishuClient,
+    pub registry: &'a CommandRegistry, // 查询指令与生成帮助
 }
 
 // 处理器接口必须实现以下方法：名字，用途，处理行为; 除此以外还默认了两个方法，别名和是否需要管理员权限
@@ -47,6 +48,14 @@ impl CommandRegistry {
             }
         }
         None
+    }
+
+    pub fn help_text(&self) -> String {
+        let mut lines = Vec::new();
+        for handler in &self.handlers {
+            lines.push(handler.usage());
+        }
+        lines.join("\n\n")
     }
 
     // 检查名称冲突并保存处理器

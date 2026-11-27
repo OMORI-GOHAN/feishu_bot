@@ -59,7 +59,11 @@ pub async fn execute_command(
     message: &crate::feishu::message::IncomingMessage,
     command: &ParsedCommand,
 ) -> anyhow::Result<()> {
-    let mut ctx = CommandContext { message, client };
+    let mut ctx = CommandContext {
+        message,
+        client,
+        registry,
+    };
 
     let contents = match registry.find(&command.name) {
         Some(handler) => handler.handle(&mut ctx, command.args.as_str()).await?,
